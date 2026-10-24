@@ -1,0 +1,276 @@
+// L-Beauty Order Bridge — data model
+// Postgres is required in every environment (the job queue relies on
+// SELECT ... FOR UPDATE SKIP LOCKED so several workers can run in parallel).
+// Money is stored as integer minor units (paise / cents) to keep sums exact.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Shopify sessions (offline tokens for L-Beauty and every brand store)
+// ---------------------------------------------------------------------------
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+
+  @@index([shop])
+}
+
+// ---------------------------------------------------------------------------
+// Brands (one row per brand Shopify store that installed the app)
+// ---------------------------------------------------------------------------
+enum BrandStatus {
+  PENDING_APPROVAL // installed via the link, waiting for L-Beauty to approve
+  APPROVED         // approved; product matching + test order in progress
+  ACTIVE           // live: paid L-Beauty orders are routed to this store
+  PAUSED           // temporarily not routing (orders fall back to the portal)
+  UNINSTALLED
+}
+
+model Brand {
+  id                 String      @id @default(cuid())
+  shopDomain         String      @unique
+  name               String
+  contactEmail       String?
+  currency           String?
+  status             BrandStatus @default(PENDING_APPROVAL)
+  // Vendor name of this brand's products in the L-Beauty catalogue. Used to
+  // scope SKU matching so identical SKUs from two brands never collide.
+  vendorName         String?
+  commissionBps      Int         @default(1000) // 1000 bps = 10%
+  mappedVariantCount Int         @default(0)
+  lastMatchedAt      DateTime?
+  matchReport        Json?
+  installedAt        DateTime    @default(now())
+  approvedAt         DateTime?
+  activatedAt        DateTime?
+  uninstalledAt      DateTime?
+  notes              String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  mappings    VariantMapping[]
+  brandOrders BrandOrder[]
+
+  @@index([status])
+}
+
+// L-Beauty variant -> brand variant. Filled by SKU matching per brand.
+model VariantMapping {
+  id             String   @id @default(cuid())
+  lbVariantId    String   @unique // numeric legacy id, as it appears in webhooks
+  lbProductId    String?
+  brandId        String
+  brandVariantId String // gid://shopify/ProductVariant/...
+  sku            String
+  matchedBy      String   @default("SKU")
+  updatedAt      DateTime @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+}
+
+// ---------------------------------------------------------------------------
+// Orders
+// ---------------------------------------------------------------------------
+
+// A paid L-Beauty order that contained at least one Shopify-connected brand.
+model LbOrder {
+  lbOrderId         String    @id // numeric legacy id
+  name              String // e.g. #1042
+  currency          String
+  // Raw webhook fields needed for routing. Cleared once routing is done, so
+  // customer details are not retained longer than necessary.
+  payload           Json?
+  routedAt          DateTime?
+  unroutedLineCount Int       @default(0)
+  cancelledAt       DateTime?
+  receivedAt        DateTime  @default(now())
+
+  brandOrders BrandOrder[]
+}
+
+enum BrandOrderStatus {
+  PENDING             // waiting for / retrying transfer
+  TRANSFERRED         // created in the brand store
+  PARTIALLY_FULFILLED
+  FULFILLED
+  FAILED              // transfer failed permanently — needs manual action
+  LB_CANCELLED        // cancelled on L-Beauty
+  BRAND_CANCELLED     // the brand cancelled it in their store
+  CANCELLED           // cancelled in the brand store by this app
+}
+
+// The part of an L-Beauty order that belongs to one brand.
+model BrandOrder {
+  id              String           @id @default(cuid())
+  lbOrderId       String
+  lbOrderName     String
+  brandId         String
+  status          BrandOrderStatus @default(PENDING)
+  isTest          Boolean          @default(false)
+  brandOrderId    String?          @unique // gid of the order in the brand store
+  brandOrderName  String?
+  currency        String
+  subtotalMinor   Int
+  // Shipping address etc. needed to create the brand order. Cleared after a
+  // successful transfer.
+  transferInput   Json?
+  attempts        Int              @default(0)
+  lastError       String?
+  transferredAt   DateTime?
+  fulfilledAt     DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  brand        Brand             @relation(fields: [brandId], references: [id])
+  lbOrder      LbOrder           @relation(fields: [lbOrderId], references: [lbOrderId])
+  lines        BrandOrderLine[]
+  fulfillments FulfillmentLink[]
+  refunds      RefundRecord[]
+  events       OrderEvent[]
+
+  @@unique([lbOrderId, brandId])
+  @@index([brandId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model BrandOrderLine {
+  id               String  @id @default(cuid())
+  brandOrderId     String
+  lbLineItemId     String // numeric legacy id
+  lbVariantId      String
+  brandVariantId   String
+  brandLineItemId  String? // gid, known after transfer
+  sku              String
+  title            String
+  quantity         Int
+  unitPriceMinor   Int
+  lineTotalMinor   Int // after discounts — the basis for reconciliation
+  fulfilledQty     Int     @default(0)
+  refundedQty      Int     @default(0)
+
+  brandOrder BrandOrder @relation(fields: [brandOrderId], references: [id], onDelete: Cascade)
+
+  @@index([brandOrderId])
+  @@index([lbLineItemId])
+}
+
+// A brand fulfillment and the matching fulfillment created on L-Beauty.
+model FulfillmentLink {
+  id                 String   @id @default(cuid())
+  brandOrderId       String
+  brandFulfillmentId String   @unique
+  lbFulfillmentId    String?
+  status             String
+  trackingNumber     String?
+  trackingCompany    String?
+  trackingUrl        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  brandOrder BrandOrder @relation(fields: [brandOrderId], references: [id], onDelete: Cascade)
+
+  @@index([brandOrderId])
+}
+
+enum RefundSource {
+  LBEAUTY // customer refunded by L-Beauty — reduces the amount due to the brand
+  BRAND   // brand refunded inside their own store — informational
+}
+
+model RefundRecord {
+  id               String       @id @default(cuid())
+  brandOrderId     String
+  source           RefundSource
+  externalRefundId String
+  amountMinor      Int
+  quantity         Int
+  createdAt        DateTime     @default(now())
+
+  brandOrder BrandOrder @relation(fields: [brandOrderId], references: [id], onDelete: Cascade)
+
+  @@unique([source, externalRefundId, brandOrderId])
+  @@index([brandOrderId])
+}
+
+// Audit timeline for each brand order: every transfer attempt, fulfillment,
+// cancellation, refund and manual action. Nothing fails silently.
+model OrderEvent {
+  id           String   @id @default(cuid())
+  brandOrderId String
+  kind         String // e.g. TRANSFER_OK, TRANSFER_FAILED, FULFILLED, REFUND
+  level        String   @default("info") // info | warning | error
+  message      String
+  createdAt    DateTime @default(now())
+
+  brandOrder BrandOrder @relation(fields: [brandOrderId], references: [id], onDelete: Cascade)
+
+  @@index([brandOrderId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Infrastructure
+// ---------------------------------------------------------------------------
+
+// Webhook de-duplication (Shopify delivers at least once).
+model WebhookEvent {
+  id         String   @id // X-Shopify-Webhook-Id
+  topic      String
+  shop       String
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  DONE
+  DEAD
+}
+
+// Durable job queue. Webhooks only enqueue; `npm run worker` processes.
+// Run as many worker processes as needed — claiming uses SKIP LOCKED.
+model Job {
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json
+  status      JobStatus @default(QUEUED)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(8)
+  runAt       DateTime  @default(now())
+  lockedAt    DateTime?
+  lockedBy    String?
+  lastError   String?
+  // Prevents the same work being queued twice while it is still pending.
+  dedupeKey   String?   @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAt])
+}
