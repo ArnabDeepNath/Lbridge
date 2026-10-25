@@ -4,14 +4,14 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { isMarketplace } from "../lib/config.server";
+import { authenticateAdminOrLocal } from "../lib/guard.server";
 import { queueStats } from "../lib/jobs.server";
 import { StatusBadge, money, when } from "../lib/ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session } = await authenticateAdminOrLocal(request);
 
   if (!isMarketplace(session.shop)) {
     const brand = await db.brand.findUnique({ where: { shopDomain: session.shop } });

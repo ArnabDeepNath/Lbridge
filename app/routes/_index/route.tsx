@@ -12,6 +12,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
 
+  if (!url.searchParams.get("login")) {
+    throw redirect("/app");
+  }
+
   return { showForm: Boolean(login) };
 };
 
@@ -21,34 +25,31 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>A short heading about [your app]</h1>
+        <h1 className={styles.heading}>L-Beauty Order Bridge</h1>
         <p className={styles.text}>
-          A tagline about [your app] that describes your value proposition.
+          Multi-brand order splitting, fulfillment sync-back, and brand reconciliation for L-Beauty.
         </p>
         {showForm && (
           <Form className={styles.form} method="post" action="/auth/login">
             <label className={styles.label}>
               <span>Shop domain</span>
               <input className={styles.input} type="text" name="shop" />
-              <span>e.g: my-shop-domain.myshopify.com</span>
+              <span>e.g: nh0md3-b7.myshopify.com</span>
             </label>
             <button className={styles.button} type="submit">
-              Log in
+              Connect store
             </button>
           </Form>
         )}
         <ul className={styles.list}>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Order Splitting</strong>. Automatically splits paid L-Beauty orders by brand and transfers each part to the corresponding brand Shopify store.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Fulfillment & Tracking Sync</strong>. Syncs shipment tracking and cancellations from brand stores back to L-Beauty.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Brand Reconciliation</strong>. Tracks GMV, commission, and net payout per brand with CSV export.
           </li>
         </ul>
       </div>
