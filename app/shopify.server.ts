@@ -16,12 +16,20 @@ const DEFAULT_SCOPES = [
   "write_merchant_managed_fulfillment_orders",
 ];
 
+const fallbackAppUrl =
+  process.env.SHOPIFY_APP_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "https://lbridge-nine.vercel.app");
+
 const shopify = shopifyApp({
-  apiKey: process.env.SHOPIFY_API_KEY,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
+  apiKey: process.env.SHOPIFY_API_KEY || "8c0c6ebea858c90968dc40272a2e349b",
+  apiSecretKey: process.env.SHOPIFY_API_SECRET || "local-dev-secret",
   apiVersion: ApiVersion.October26,
   scopes: process.env.SCOPES ? process.env.SCOPES.split(",") : DEFAULT_SCOPES,
-  appUrl: process.env.SHOPIFY_APP_URL || "",
+  appUrl: fallbackAppUrl,
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   // Public app with an unlisted listing: one install link works for every brand.

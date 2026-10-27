@@ -6,7 +6,13 @@ const bool = (v: string | undefined, d = false) =>
 
 export const config = {
   /** L-Beauty's own store. Every other store that installs is a brand. */
-  marketplaceShop: (process.env.MARKETPLACE_SHOP ?? "").toLowerCase().trim(),
+  marketplaceShop: (
+    process.env.MARKETPLACE_SHOP ||
+    process.env.MARKETPLACE_SHOP_DOMAIN ||
+    "nh0md3-b7.myshopify.com"
+  )
+    .toLowerCase()
+    .trim(),
   /** Slack-compatible incoming webhook for alerts (optional). */
   alertWebhookUrl: process.env.ALERT_WEBHOOK_URL || "",
   /** Pass the buyer's email to brand stores (default off — brands get the address only). */
@@ -20,7 +26,7 @@ export const config = {
   /** Link brands open to install. Use the unlisted App Store listing URL once approved. */
   brandInstallUrl:
     process.env.BRAND_INSTALL_URL ||
-    `https://admin.shopify.com/oauth/install?client_id=${process.env.SHOPIFY_API_KEY ?? ""}`,
+    `https://admin.shopify.com/oauth/install?client_id=${process.env.SHOPIFY_API_KEY || "8c0c6ebea858c90968dc40272a2e349b"}`,
   /** Worker tuning */
   workerConcurrency: Number(process.env.WORKER_CONCURRENCY || 8),
   workerPollMs: Number(process.env.WORKER_POLL_MS || 1000),
