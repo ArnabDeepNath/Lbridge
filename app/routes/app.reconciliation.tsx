@@ -4,11 +4,10 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { Form, useLoaderData, useSearchParams } from "react-router";
 import { useState } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { useAppBridge } from "@shopify/app-bridge-react";
 import db from "../db.server";
 import { requireMarketplace } from "../lib/guard.server";
 import { parseRange, summarize } from "../lib/reconciliation.server";
-import { downloadFile, money } from "../lib/ui";
+import { downloadFile, money, showToast } from "../lib/ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await requireMarketplace(request);
@@ -32,7 +31,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function Reconciliation() {
   const { rows, currency, totals, brands, fromStr, toStr } = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
-  const shopify = useAppBridge();
   const [busy, setBusy] = useState(false);
   const m = (n: number) => money(n, currency);
 
@@ -43,7 +41,7 @@ export default function Reconciliation() {
       if (detail) qs.set("detail", "1");
       await downloadFile(`/app/reconciliation-export?${qs}`, `l-beauty-${detail ? "orders" : "payouts"}-${fromStr}-to-${toStr}.csv`);
     } catch (e) {
-      shopify.toast.show((e as Error).message, { isError: true });
+      showToast((e as Error).message, { isError: true });
     } finally {
       setBusy(false);
     }

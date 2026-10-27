@@ -3,12 +3,11 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { Form, useLoaderData, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { useAppBridge } from "@shopify/app-bridge-react";
 import type { BrandStatus, Prisma } from "@prisma/client";
 import db from "../db.server";
 import { requireMarketplace } from "../lib/guard.server";
 import { config } from "../lib/config.server";
-import { StatusBadge, statusLabel, when } from "../lib/ui";
+import { StatusBadge, showToast, statusLabel, when } from "../lib/ui";
 
 const PAGE = 50;
 const STATUSES: BrandStatus[] = ["PENDING_APPROVAL", "APPROVED", "ACTIVE", "PAUSED", "UNINSTALLED"];
@@ -71,7 +70,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function Brands() {
   const { brands, total, page, pages, health, installUrl } = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
-  const shopify = useAppBridge();
   const pageHref = (p: number) => {
     const next = new URLSearchParams(params);
     next.set("page", String(p));
@@ -79,7 +77,7 @@ export default function Brands() {
   };
   const copy = async () => {
     await navigator.clipboard.writeText(installUrl);
-    shopify.toast.show("Install link copied");
+    showToast("Install link copied");
   };
 
   return (

@@ -51,6 +51,36 @@ export function when(d: string | Date | null | undefined) {
   return new Date(d).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** Shows a toast inside Shopify Admin (App Bridge) or a standalone browser fallback. */
+export function showToast(message: string, opts?: { isError?: boolean }) {
+  if (typeof window === "undefined") return;
+  const w = window as unknown as {
+    shopify?: { toast?: { show?: (msg: string, o?: { isError?: boolean }) => void } };
+  };
+  if (w.shopify?.toast?.show) {
+    w.shopify.toast.show(message, opts);
+    return;
+  }
+  const el = document.createElement("div");
+  el.textContent = message;
+  Object.assign(el.style, {
+    position: "fixed",
+    bottom: "24px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: opts?.isError ? "#8e1f0b" : "#1a1a1a",
+    color: "#ffffff",
+    padding: "10px 18px",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: "500",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+    zIndex: "9999",
+  });
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
 /** Triggers a file download for an authenticated CSV route inside the embedded admin. */
 export async function downloadFile(url: string, filename: string) {
   const res = await fetch(url);
