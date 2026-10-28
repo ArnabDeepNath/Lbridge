@@ -13,7 +13,7 @@ function authorized(request: Request): boolean {
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
-export const action = async ({ request }: ActionFunctionArgs) => {
+async function runTick(request: Request) {
   if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
   await housekeeping();
   const deadline = Date.now() + 20_000;
@@ -24,6 +24,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (ran === 0) break;
   }
   return Response.json({ processed: total });
-};
+}
 
-export const loader = () => new Response("Method Not Allowed", { status: 405 });
+export const action = async ({ request }: ActionFunctionArgs) => runTick(request);
+
+export const loader = async ({ request }: ActionFunctionArgs) => runTick(request);

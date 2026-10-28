@@ -30,6 +30,8 @@ export interface EnqueueOptions {
   maxAttempts?: number;
 }
 
+let vercelDraining = false;
+
 export async function enqueue(
   type: string,
   payload: Record<string, unknown>,
@@ -49,6 +51,24 @@ export async function enqueue(
     // Same work already queued — nothing to do.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return;
     throw e;
+  }
+
+  // On Vercel serverless there is no long-running `npm run worker` process,
+  // so drain newly queued jobs inline within a safe time budget.
+  if (process.env.VERCEL && !vercelDraining) {
+    vercelDraining = true;
+    try {
+      const { tick } = await import("./worker.server");
+      const deadline = Date.now() + 4_000;
+      while (Date.now() < deadline) {
+        const ran = await tick(`vercel-${process.pid}`, 4);
+        if (ran === 0) break;
+      }
+    } catch (err) {
+      console.error("[jobs] vercel inline tick error:", err);
+    } finally {
+      vercelDraining = false;
+    }
   }
 }
 

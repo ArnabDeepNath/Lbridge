@@ -3,7 +3,7 @@
 client_id = "8c0c6ebea858c90968dc40272a2e349b"
 name = "mukesh"
 embedded = true
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://lbridge-nine.vercel.app"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
@@ -35,7 +35,11 @@ api_version = "2026-10"
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [
+  "https://lbridge-nine.vercel.app/auth/callback",
+  "https://lbridge-nine.vercel.app/auth/shopify/callback",
+  "https://lbridge-nine.vercel.app/api/auth/callback"
+]
 
 [build]
 include_config_on_deploy = true
