@@ -28,7 +28,7 @@ export const config = {
   /** Link brands open to install. Use the unlisted App Store listing URL once approved. */
   brandInstallUrl:
     process.env.BRAND_INSTALL_URL ||
-    `https://admin.shopify.com/oauth/install?client_id=${process.env.SHOPIFY_API_KEY || "8c0c6ebea858c90968dc40272a2e349b"}`,
+    `https://admin.shopify.com/oauth/install?client_id=${process.env.SHOPIFY_API_KEY || "fd77ecddff8c7efa0418e2e93d5c97e5"}`,
   /** Worker tuning */
   workerConcurrency: Number(process.env.WORKER_CONCURRENCY || 8),
   workerPollMs: Number(process.env.WORKER_POLL_MS || 1000),

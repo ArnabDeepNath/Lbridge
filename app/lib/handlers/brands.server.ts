@@ -11,8 +11,44 @@ import { toMinor } from "../core/money.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+const REGISTER_WEBHOOK = `#graphql
+  mutation LbBridgeWebhookSubscribe($topic: WebhookSubscriptionTopic!, $callbackUrl: URL!) {
+    webhookSubscriptionCreate(
+      topic: $topic
+      webhookSubscription: { callbackUrl: $callbackUrl, format: JSON }
+    ) {
+      webhookSubscription { id }
+      userErrors { field message }
+    }
+  }`;
+
+async function ensureEventWebhooks(admin: { graphql: (q: string, opts?: any) => Promise<Response> }) {
+  const appUrl = (
+    process.env.SHOPIFY_APP_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : "https://lbridge-nine.vercel.app")
+  ).replace(/\/$/, "");
+  const callbackUrl = `${appUrl}/webhooks/events`;
+  const topics = [
+    "ORDERS_PAID",
+    "ORDERS_CANCELLED",
+    "REFUNDS_CREATE",
+    "FULFILLMENTS_CREATE",
+    "FULFILLMENTS_UPDATE",
+  ];
+  for (const topic of topics) {
+    try {
+      await admin.graphql(REGISTER_WEBHOOK, { variables: { topic, callbackUrl } });
+    } catch {
+      // Ignore if Protected Customer Data isn't enabled yet in Partner Dashboard.
+    }
+  }
+}
+
 /** Called right after any store installs (or re-installs) the app. */
-export async function onInstall(shop: string, admin: { graphql: (q: string) => Promise<Response> }) {
+export async function onInstall(shop: string, admin: { graphql: (q: string, opts?: any) => Promise<Response> }) {
+  await ensureEventWebhooks(admin);
   if (isMarketplace(shop)) return;
   let info: any = {};
   try {

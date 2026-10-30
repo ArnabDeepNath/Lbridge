@@ -1,13 +1,13 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "8c0c6ebea858c90968dc40272a2e349b"
-name = "mukesh"
+client_id = "fd77ecddff8c7efa0418e2e93d5c97e5"
+name = "L-Beauty Order Bridge"
 embedded = true
 application_url = "https://lbridge-nine.vercel.app"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_orders,write_orders,read_products,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders"
+scopes = "read_orders,write_orders,read_products,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders"
 
 [webhooks]
 api_version = "2026-10"
@@ -21,16 +21,6 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
   [[webhooks.subscriptions]]
-  uri = "/webhooks/events"
-  topics = [
-  "orders/paid",
-  "orders/cancelled",
-  "refunds/create",
-  "fulfillments/create",
-  "fulfillments/update"
-]
-
-  [[webhooks.subscriptions]]
   uri = "/webhooks/compliance"
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
@@ -42,5 +32,4 @@ redirect_urls = [
 ]
 
 [build]
-include_config_on_deploy = true
 automatically_update_urls_on_dev = true

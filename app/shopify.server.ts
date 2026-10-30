@@ -12,6 +12,8 @@ const DEFAULT_SCOPES = [
   "read_orders",
   "write_orders",
   "read_products",
+  "read_fulfillments",
+  "write_fulfillments",
   "read_merchant_managed_fulfillment_orders",
   "write_merchant_managed_fulfillment_orders",
 ];
@@ -25,7 +27,7 @@ const fallbackAppUrl =
       : "https://lbridge-nine.vercel.app");
 
 const shopify = shopifyApp({
-  apiKey: process.env.SHOPIFY_API_KEY || "8c0c6ebea858c90968dc40272a2e349b",
+  apiKey: process.env.SHOPIFY_API_KEY || "fd77ecddff8c7efa0418e2e93d5c97e5",
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "local-dev-secret",
   apiVersion: ApiVersion.October26,
   scopes: process.env.SCOPES ? process.env.SCOPES.split(",") : DEFAULT_SCOPES,
