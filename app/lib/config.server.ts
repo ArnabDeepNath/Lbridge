@@ -9,10 +9,12 @@ export const config = {
   marketplaceShop: (
     process.env.MARKETPLACE_SHOP ||
     process.env.MARKETPLACE_SHOP_DOMAIN ||
-    "nh0md3-b7.myshopify.com"
+    "lbeauty-demo-marketplace.myshopify.com"
   )
     .toLowerCase()
-    .trim(),
+    .trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, ""),
   /** Slack-compatible incoming webhook for alerts (optional). */
   alertWebhookUrl: process.env.ALERT_WEBHOOK_URL || "",
   /** Pass the buyer's email to brand stores (default off — brands get the address only). */
