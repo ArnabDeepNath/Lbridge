@@ -42,6 +42,108 @@ const TRACKING_UPDATE = `#graphql
     }
   }`;
 
+const ORDER_REFUNDABLE_LINES = `#graphql
+  query LbBridgeOrderRefundableLines($id: ID!) {
+    order(id: $id) {
+      id
+      lineItems(first: 250) {
+        nodes { id refundableQuantity }
+      }
+    }
+  }`;
+
+const SUGGESTED_REFUND = `#graphql
+  query LbBridgeSuggestedRefund($id: ID!, $refundLineItems: [RefundLineItemInput!]!) {
+    order(id: $id) {
+      id
+      suggestedRefund(refundLineItems: $refundLineItems) {
+        amountSet {
+          shopMoney { amount currencyCode }
+          presentmentMoney { amount currencyCode }
+        }
+        suggestedTransactions {
+          amountSet {
+            shopMoney { amount currencyCode }
+            presentmentMoney { amount currencyCode }
+          }
+          gateway
+          kind
+          parentTransaction { id }
+        }
+      }
+    }
+  }`;
+
+const REFUND_CREATE = `#graphql
+  mutation LbBridgeRefundCreate($input: RefundInput!, $idempotencyKey: String!) {
+    refundCreate(input: $input) @idempotent(key: $idempotencyKey) {
+      refund { id }
+      userErrors { field message }
+    }
+  }`;
+
+async function mirrorRefundToShop(
+  admin: any,
+  orderGid: string,
+  wantedLines: { lineItemId: string; quantity: number }[],
+  note: string,
+  notify: boolean,
+  idempotencyKey: string,
+): Promise<string | null> {
+  if (!wantedLines.length) return null;
+  const orderData = await gql(admin, ORDER_REFUNDABLE_LINES, { id: orderGid });
+  const refundableByLine = new Map<string, number>();
+  for (const node of orderData?.order?.lineItems?.nodes ?? []) {
+    refundableByLine.set(node.id, Number(node.refundableQuantity ?? 0));
+  }
+
+  const refundLineItems = wantedLines
+    .map((w) => {
+      const maxQty = refundableByLine.get(w.lineItemId) ?? 0;
+      const quantity = Math.min(w.quantity, maxQty);
+      return {
+        lineItemId: w.lineItemId,
+        quantity,
+        restockType: "NO_RESTOCK",
+      };
+    })
+    .filter((item) => item.quantity > 0);
+
+  if (!refundLineItems.length) return null;
+
+  const sugData = await gql(admin, SUGGESTED_REFUND, { id: orderGid, refundLineItems });
+  const suggested = sugData?.order?.suggestedRefund;
+  const currency =
+    suggested?.amountSet?.presentmentMoney?.currencyCode ??
+    suggested?.amountSet?.shopMoney?.currencyCode ??
+    undefined;
+  const transactions = (suggested?.suggestedTransactions ?? []).map((t: any) => ({
+    orderId: orderGid,
+    kind: "REFUND",
+    gateway: t.gateway,
+    amount:
+      t.amountSet?.presentmentMoney?.amount ??
+      t.amountSet?.shopMoney?.amount ??
+      t.amount,
+    ...(t.parentTransaction?.id ? { parentId: t.parentTransaction.id } : {}),
+  }));
+
+  const res = await gql(admin, REFUND_CREATE, {
+    idempotencyKey,
+    input: {
+      orderId: orderGid,
+      ...(currency ? { currency } : {}),
+      note,
+      notify,
+      refundLineItems,
+      transactions,
+    },
+  });
+  assertNoUserErrors("Refund sync failed", res?.refundCreate?.userErrors);
+  const createdId = res?.refundCreate?.refund?.id;
+  return createdId ? legacyId(createdId) : null;
+}
+
 function tracking(p: any) {
   return {
     number: p.tracking_number ?? p.tracking_numbers?.[0] ?? null,
@@ -79,6 +181,15 @@ export async function brandFulfillment({ shop, payload }: { shop: string; payloa
 
   // Tracking update on a fulfillment we already mirrored.
   if (existing?.lbFulfillmentId) {
+    if (bo.status === "TRANSFERRED" && bo.lines.some((l) => l.fulfilledQty > 0)) {
+      const done = bo.lines.every((l) => l.fulfilledQty >= l.quantity);
+      await db.brandOrder.update({
+        where: { id: bo.id },
+        data: done
+          ? { status: "FULFILLED", fulfilledAt: bo.fulfilledAt ?? new Date(), lastError: null }
+          : { status: "PARTIALLY_FULFILLED", lastError: null },
+      });
+    }
     const changed =
       existing.trackingNumber !== t.number ||
       existing.trackingCompany !== t.company ||
@@ -159,7 +270,9 @@ export async function brandFulfillment({ shop, payload }: { shop: string; payloa
   const done = lines.every((l) => l.fulfilledQty >= l.quantity);
   await db.brandOrder.update({
     where: { id: bo.id },
-    data: done ? { status: "FULFILLED", fulfilledAt: new Date() } : { status: "PARTIALLY_FULFILLED" },
+    data: done
+      ? { status: "FULFILLED", fulfilledAt: new Date(), lastError: null }
+      : { status: "PARTIALLY_FULFILLED", lastError: null },
   });
   await logEvent(
     bo.id,
@@ -207,16 +320,51 @@ export async function orderCancelled({ shop, payload }: { shop: string; payload:
   }
   const bo = await db.brandOrder.findUnique({
     where: { brandOrderId: toGid("Order", payload.id) },
-    include: { brand: true },
+    include: { lines: true, brand: true },
   });
   if (!bo || bo.brand.shopDomain !== shop || bo.status === "CANCELLED") return;
   await db.brandOrder.update({
     where: { id: bo.id },
-    data: { status: "BRAND_CANCELLED", cancelledAt: new Date() },
+    data: { status: "BRAND_CANCELLED", cancelledAt: new Date(), lastError: null },
   });
   await logEvent(bo.id, "BRAND_CANCELLED", `Brand cancelled ${bo.brandOrderName}${payload.cancel_reason ? ` (${payload.cancel_reason})` : ""}`, "error");
   if (!bo.isTest) {
-    await alert("error", `${bo.brand.name} cancelled ${bo.lbOrderName}. Refund or reassign the customer's items in L-Beauty.`);
+    const lbWanted = bo.lines
+      .map((l) => ({
+        line: l,
+        remQty: Math.max(0, l.quantity - l.refundedQty),
+      }))
+      .filter((x) => x.remQty > 0);
+    if (lbWanted.length > 0) {
+      const lbAdmin = await adminFor(config.marketplaceShop);
+      const lbRefundId = await mirrorRefundToShop(
+        lbAdmin,
+        toGid("Order", bo.lbOrderId),
+        lbWanted.map((x) => ({ lineItemId: toGid("LineItem", x.line.lbLineItemId), quantity: x.remQty })),
+        `Brand ${bo.brand.name} cancelled ${bo.brandOrderName ?? bo.id}`,
+        true,
+        `brand-cancel-refund-${bo.id}`,
+      );
+      if (lbRefundId) {
+        let totalAmount = 0;
+        let totalQty = 0;
+        for (const { line, remQty } of lbWanted) {
+          totalAmount += refundValue(line.lineTotalMinor, line.quantity, remQty);
+          totalQty += remQty;
+          await db.brandOrderLine.update({
+            where: { id: line.id },
+            data: { refundedQty: line.quantity },
+          });
+        }
+        await db.refundRecord.upsert({
+          where: { source_externalRefundId_brandOrderId: { source: "LBEAUTY", externalRefundId: lbRefundId, brandOrderId: bo.id } },
+          create: { brandOrderId: bo.id, source: "LBEAUTY", externalRefundId: lbRefundId, amountMinor: totalAmount, quantity: totalQty },
+          update: { amountMinor: totalAmount, quantity: totalQty },
+        });
+        await logEvent(bo.id, "REFUND_LBEAUTY", `Mirrored refund of ${totalQty} unit(s) (${fromMinor(totalAmount)}) onto L-Beauty ${bo.lbOrderName} after brand cancellation`, "warning");
+      }
+    }
+    await alert("error", `${bo.brand.name} cancelled ${bo.lbOrderName}. Customer items were refunded on L-Beauty.`);
   }
 }
 
@@ -231,53 +379,143 @@ export async function refundCreated({ shop, payload }: { shop: string; payload: 
     if (!lbLineIds.length) return; // shipping-only / amount-only refund
     const lines = await db.brandOrderLine.findMany({
       where: { lbLineItemId: { in: lbLineIds }, brandOrder: { lbOrderId: String(payload.order_id) } },
+      include: { brandOrder: { include: { brand: true } } },
     });
-    const perOrder = new Map<string, { amount: number; qty: number }>();
+    const perOrder = new Map<
+      string,
+      {
+        bo: (typeof lines)[number]["brandOrder"];
+        amount: number;
+        qty: number;
+        lineUpdates: { lineId: string; newRefundedQty: number }[];
+        brandWanted: { lineItemId: string; quantity: number }[];
+      }
+    >();
     for (const r of refundLines) {
       const line = lines.find((l) => l.lbLineItemId === String(r.line_item_id));
       if (!line) continue;
       const qty = Number(r.quantity);
-      const acc = perOrder.get(line.brandOrderId) ?? { amount: 0, qty: 0 };
+      if (qty <= 0) continue;
+      const acc = perOrder.get(line.brandOrderId) ?? {
+        bo: line.brandOrder,
+        amount: 0,
+        qty: 0,
+        lineUpdates: [],
+        brandWanted: [],
+      };
       acc.amount += refundValue(line.lineTotalMinor, line.quantity, qty);
       acc.qty += qty;
-      perOrder.set(line.brandOrderId, acc);
-      await db.brandOrderLine.update({
-        where: { id: line.id },
-        data: { refundedQty: Math.min(line.quantity, line.refundedQty + qty) },
+      acc.lineUpdates.push({
+        lineId: line.id,
+        newRefundedQty: Math.min(line.quantity, line.refundedQty + qty),
       });
+      if (line.brandLineItemId) {
+        acc.brandWanted.push({ lineItemId: line.brandLineItemId, quantity: qty });
+      }
+      perOrder.set(line.brandOrderId, acc);
     }
     for (const [brandOrderId, v] of perOrder) {
-      await db.refundRecord.upsert({
+      const existingLbRefund = await db.refundRecord.findUnique({
         where: { source_externalRefundId_brandOrderId: { source: "LBEAUTY", externalRefundId: refundId, brandOrderId } },
-        create: { brandOrderId, source: "LBEAUTY", externalRefundId: refundId, amountMinor: v.amount, quantity: v.qty },
-        update: {},
+      });
+      // If we already recorded this L-Beauty refund (e.g., when mirroring a brand refund), skip to avoid double-counting.
+      if (existingLbRefund) continue;
+
+      for (const u of v.lineUpdates) {
+        await db.brandOrderLine.update({
+          where: { id: u.lineId },
+          data: { refundedQty: u.newRefundedQty },
+        });
+      }
+      await db.refundRecord.create({
+        data: { brandOrderId, source: "LBEAUTY", externalRefundId: refundId, amountMinor: v.amount, quantity: v.qty },
       });
       await logEvent(brandOrderId, "REFUND_LBEAUTY", `Customer refunded ${v.qty} unit(s) on L-Beauty (${fromMinor(v.amount)}) — deducted from brand payout`, "warning");
+
+      if (!v.bo.isTest && v.bo.brandOrderId && v.brandWanted.length > 0) {
+        const brandAdmin = await adminFor(v.bo.brand.shopDomain);
+        const brandRefundId = await mirrorRefundToShop(
+          brandAdmin,
+          v.bo.brandOrderId,
+          v.brandWanted,
+          `Refund synced from L-Beauty order ${v.bo.lbOrderName}`,
+          false,
+          `lb-refund-${v.bo.id}-${refundId}`,
+        );
+        if (brandRefundId) {
+          await db.refundRecord.upsert({
+            where: { source_externalRefundId_brandOrderId: { source: "BRAND", externalRefundId: brandRefundId, brandOrderId } },
+            create: { brandOrderId, source: "BRAND", externalRefundId: brandRefundId, amountMinor: v.amount, quantity: v.qty },
+            update: { amountMinor: v.amount, quantity: v.qty },
+          });
+        }
+      }
     }
     return;
   }
 
   const bo = await db.brandOrder.findUnique({
     where: { brandOrderId: toGid("Order", payload.order_id) },
-    include: { lines: true, brand: true },
+    include: { lines: true, brand: true, refunds: true },
   });
   if (!bo || bo.brand.shopDomain !== shop) return;
+
+  const existingBrandRefund = bo.refunds.find((r) => r.source === "BRAND" && r.externalRefundId === refundId);
   let amount = 0;
   let qty = 0;
+  const lbWanted: { lineItemId: string; quantity: number }[] = [];
+
   for (const r of refundLines) {
     const line = bo.lines.find((l) => l.brandLineItemId === toGid("LineItem", r.line_item_id));
     if (!line) continue;
-    amount += refundValue(line.lineTotalMinor, line.quantity, Number(r.quantity));
-    qty += Number(r.quantity);
+    const rQty = Number(r.quantity);
+    if (rQty <= 0) continue;
+    amount += refundValue(line.lineTotalMinor, line.quantity, rQty);
+    qty += rQty;
+    lbWanted.push({ lineItemId: toGid("LineItem", line.lbLineItemId), quantity: rQty });
+    if (!existingBrandRefund) {
+      await db.brandOrderLine.update({
+        where: { id: line.id },
+        data: { refundedQty: Math.min(line.quantity, line.refundedQty + rQty) },
+      });
+    }
   }
+  if (!qty) return;
+
   await db.refundRecord.upsert({
     where: { source_externalRefundId_brandOrderId: { source: "BRAND", externalRefundId: refundId, brandOrderId: bo.id } },
     create: { brandOrderId: bo.id, source: "BRAND", externalRefundId: refundId, amountMinor: amount, quantity: qty },
-    update: {},
+    update: { amountMinor: amount, quantity: qty },
   });
-  await logEvent(bo.id, "REFUND_BRAND", `Brand recorded a refund/return of ${qty} unit(s) in their store`, "warning");
-  if (!bo.isTest) {
-    await alert("warning", `${bo.brand.name} recorded a refund on ${bo.lbOrderName} — check whether the customer needs refunding on L-Beauty.`);
+
+  if (!bo.isTest && lbWanted.length > 0) {
+    const lbAdmin = await adminFor(config.marketplaceShop);
+    const lbRefundId = await mirrorRefundToShop(
+      lbAdmin,
+      toGid("Order", bo.lbOrderId),
+      lbWanted,
+      `Refund/return synced from ${bo.brand.name} (${bo.brandOrderName ?? bo.id})`,
+      true,
+      `brand-refund-${bo.id}-${refundId}`,
+    );
+    if (lbRefundId) {
+      await db.refundRecord.upsert({
+        where: { source_externalRefundId_brandOrderId: { source: "LBEAUTY", externalRefundId: lbRefundId, brandOrderId: bo.id } },
+        create: { brandOrderId: bo.id, source: "LBEAUTY", externalRefundId: lbRefundId, amountMinor: amount, quantity: qty },
+        update: { amountMinor: amount, quantity: qty },
+      });
+      await logEvent(
+        bo.id,
+        "REFUND_BRAND",
+        `Brand refunded/returned ${qty} unit(s) (${fromMinor(amount)}); mirrored refund onto L-Beauty order ${bo.lbOrderName}`,
+        "warning",
+      );
+      return;
+    }
+  }
+
+  if (!existingBrandRefund) {
+    await logEvent(bo.id, "REFUND_BRAND", `Brand recorded a refund/return of ${qty} unit(s) in their store`, "warning");
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

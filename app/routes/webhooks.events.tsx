@@ -78,9 +78,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         payload: {
           id: p.id,
           order_id: p.order_id,
+          note: p.note ?? null,
           refund_line_items: (p.refund_line_items ?? []).map((r: any) => ({
             line_item_id: r.line_item_id,
             quantity: r.quantity,
+            restock_type: r.restock_type ?? null,
           })),
         },
       });

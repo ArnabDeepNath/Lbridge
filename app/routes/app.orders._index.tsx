@@ -35,7 +35,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * PAGE,
       take: PAGE,
-      include: { brand: { select: { name: true } } },
+      include: {
+        brand: { select: { name: true } },
+        lines: { select: { quantity: true, refundedQty: true } },
+      },
     }),
     db.brandOrder.count({ where }),
     db.brand.findMany({ where: { status: { not: "UNINSTALLED" } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -123,7 +126,21 @@ export default function Orders() {
                   <s-table-cell>{o.brand.name}</s-table-cell>
                   <s-table-cell>{o.brandOrderName ?? "—"}</s-table-cell>
                   <s-table-cell>{money(o.subtotalMinor, o.currency)}</s-table-cell>
-                  <s-table-cell><StatusBadge status={o.status} /></s-table-cell>
+                  <s-table-cell>
+                    <s-stack direction="inline" gap="small-200">
+                      <StatusBadge status={o.status} />
+                      {(() => {
+                        const totalQty = o.lines.reduce((s, l) => s + l.quantity, 0);
+                        const refundedQty = o.lines.reduce((s, l) => s + l.refundedQty, 0);
+                        if (refundedQty <= 0) return null;
+                        return (
+                          <s-badge tone="warning">
+                            {refundedQty >= totalQty ? "Refunded" : "Partly refunded"}
+                          </s-badge>
+                        );
+                      })()}
+                    </s-stack>
+                  </s-table-cell>
                   <s-table-cell>{when(o.createdAt)}</s-table-cell>
                 </s-table-row>
               ))}

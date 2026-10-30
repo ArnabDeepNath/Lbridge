@@ -53,8 +53,13 @@ export default function OrderDetail() {
   const { order, marketplaceShop } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
   const busy = useNavigation().state !== "idle";
+  const totalQty = order.lines.reduce((s, l) => s + l.quantity, 0);
+  const refundedQty = order.lines.reduce((s, l) => s + l.refundedQty, 0);
+  const hasShippedOrReturned =
+    order.lines.some((l) => l.fulfilledQty > 0 || l.refundedQty > 0) || order.refunds.length > 0;
   const canRetry = order.status === "FAILED" && !order.brandOrderId;
-  const canCancel = !!order.brandOrderId && ["TRANSFERRED", "LB_CANCELLED"].includes(order.status);
+  const canCancel =
+    !!order.brandOrderId && ["TRANSFERRED", "LB_CANCELLED"].includes(order.status) && !hasShippedOrReturned;
   const lbAdmin = (path: string) => `https://${marketplaceShop}/admin/${path}`;
   const brandAdmin = (path: string) => `https://${order.brand.shopDomain}/admin/${path}`;
 
@@ -68,7 +73,16 @@ export default function OrderDetail() {
 
       <s-section heading="Summary">
         <s-stack gap="small-200">
-          <s-paragraph>Status: <StatusBadge status={order.status} />{order.isTest ? " · Test order" : ""}</s-paragraph>
+          <s-paragraph>
+            Status: <StatusBadge status={order.status} />
+            {refundedQty > 0 && (
+              <>
+                {" "}
+                <s-badge tone="warning">{refundedQty >= totalQty ? "Refunded" : "Partly refunded"}</s-badge>
+              </>
+            )}
+            {order.isTest ? " · Test order" : ""}
+          </s-paragraph>
           <s-paragraph>
             L-Beauty order:{" "}
             {order.isTest ? order.lbOrderName : <s-link href={lbAdmin(`orders/${order.lbOrderId}`)} target="_blank">{order.lbOrderName}</s-link>}
