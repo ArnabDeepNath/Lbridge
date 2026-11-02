@@ -12,12 +12,15 @@ import { enqueue } from "../lib/jobs.server";
 import { activeMappings } from "../lib/handlers/orders.server";
 import { parseOrderWebhook } from "../lib/core/split.ts";
 import { toGid } from "../lib/core/gid.ts";
+import { verifyWebhookOrReject } from "../lib/webhooks.server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const ok = () => new Response(null, { status: 200 });
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  const unauthorized = await verifyWebhookOrReject(request);
+  if (unauthorized) return unauthorized;
   const { shop, topic, payload, webhookId } = await authenticate.webhook(request);
   const t = String(topic).toUpperCase().replace(/\//g, "_");
   const p = payload as any;

@@ -1,9 +1,12 @@
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
+import { verifyWebhookOrReject } from "../lib/webhooks.server";
 import db from "../db.server";
 import { onUninstall } from "../lib/handlers/brands.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  const unauthorized = await verifyWebhookOrReject(request);
+  if (unauthorized) return unauthorized;
   const { shop, session } = await authenticate.webhook(request);
 
   // Webhooks can repeat and arrive after the session is gone.

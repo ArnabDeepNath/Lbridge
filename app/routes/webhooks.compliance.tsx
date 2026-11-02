@@ -5,10 +5,13 @@
 import type { ActionFunctionArgs } from "react-router";
 import { Prisma } from "@prisma/client";
 import { authenticate } from "../shopify.server";
+import { verifyWebhookOrReject } from "../lib/webhooks.server";
 import db from "../db.server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const action = async ({ request }: ActionFunctionArgs) => {
+  const unauthorized = await verifyWebhookOrReject(request);
+  if (unauthorized) return unauthorized;
   const { shop, topic, payload } = await authenticate.webhook(request);
   const t = String(topic).toUpperCase().replace(/\//g, "_");
   const p = payload as any;
