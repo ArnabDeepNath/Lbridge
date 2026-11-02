@@ -44,9 +44,13 @@ export default function App() {
               <s-link href="/app/orders">Brand orders</s-link>
               <s-link href="/app/brands">Brands</s-link>
               <s-link href="/app/reconciliation">Reconciliation</s-link>
+              <s-link href="/app/privacy-policy">Privacy Policy</s-link>
             </>
           ) : (
-            <s-link href="/app">L-Beauty connection</s-link>
+            <>
+              <s-link href="/app">L-Beauty connection</s-link>
+              <s-link href="/app/privacy-policy">Privacy Policy</s-link>
+            </>
           )}
         </s-app-nav>
         <Outlet />
@@ -61,8 +65,12 @@ export default function App() {
           { href: "/app/orders", label: "Brand orders", exact: false },
           { href: "/app/brands", label: "Brands", exact: false },
           { href: "/app/reconciliation", label: "Reconciliation", exact: false },
+          { href: "/app/privacy-policy", label: "Privacy Policy", exact: false },
         ]
-      : [{ href: "/app", label: "L-Beauty connection", exact: true }];
+      : [
+          { href: "/app", label: "L-Beauty connection", exact: true },
+          { href: "/app/privacy-policy", label: "Privacy Policy", exact: false },
+        ];
 
   return (
     <div style={{ minHeight: "100vh", background: "#f1f2f4", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
