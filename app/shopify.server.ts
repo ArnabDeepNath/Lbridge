@@ -3,6 +3,7 @@ import "@shopify/shopify-app-react-router/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
+  DeliveryMethod,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
@@ -36,12 +37,35 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   // Public app with an unlisted listing: one install link works for every brand.
   distribution: AppDistribution.AppStore,
+  webhooks: {
+    APP_UNINSTALLED: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/app/uninstalled",
+    },
+    APP_SCOPES_UPDATE: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/app/scopes_update",
+    },
+    CUSTOMERS_DATA_REQUEST: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/compliance",
+    },
+    CUSTOMERS_REDACT: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/compliance",
+    },
+    SHOP_REDACT: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/compliance",
+    },
+  },
   hooks: {
     // Runs when L-Beauty or a brand installs (or re-installs) the app.
     afterAuth: async ({ session, admin }) => {
       // Lazy import avoids a module cycle (handlers use this file's exports).
       const { onInstall } = await import("./lib/handlers/brands.server");
       await onInstall(session.shop, admin);
+      await shopify.registerWebhooks({ session });
     },
   },
   future: {
