@@ -1,4 +1,4 @@
-import { authenticate } from "../shopify.server";
+import { authenticate, registerWebhooks } from "../shopify.server";
 import { config, isMarketplace } from "./config.server";
 import { adminFor } from "./shopify-api.server";
 
@@ -20,6 +20,7 @@ export function isShopifyEmbeddedRequest(request: Request) {
 export async function authenticateAdminOrLocal(request: Request) {
   if (isShopifyEmbeddedRequest(request)) {
     const ctx = await authenticate.admin(request);
+    await registerMandatoryWebhooks(ctx.session);
     return { ...ctx, embedded: true as const };
   }
 
@@ -34,6 +35,14 @@ export async function authenticateAdminOrLocal(request: Request) {
       },
     },
   };
+}
+
+async function registerMandatoryWebhooks(session: { shop: string }) {
+  try {
+    await registerWebhooks({ session });
+  } catch {
+    // Avoid blocking app loads if webhook registration fails.
+  }
 }
 
 /** Admin pages that only L-Beauty's own store may open. */
