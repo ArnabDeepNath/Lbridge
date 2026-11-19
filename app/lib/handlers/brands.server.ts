@@ -12,10 +12,10 @@ import { toMinor } from "../core/money.ts";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const REGISTER_WEBHOOK = `#graphql
-  mutation LbBridgeWebhookSubscribe($topic: WebhookSubscriptionTopic!, $callbackUrl: URL!) {
+  mutation LbBridgeWebhookSubscribe($topic: WebhookSubscriptionTopic!, $callbackUrl: String!) {
     webhookSubscriptionCreate(
       topic: $topic
-      webhookSubscription: { callbackUrl: $callbackUrl, format: JSON }
+      webhookSubscription: { uri: $callbackUrl, format: JSON }
     ) {
       webhookSubscription { id }
       userErrors { field message }

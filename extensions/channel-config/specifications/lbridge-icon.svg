@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20" role="img" aria-labelledby="title">
+  <title id="title">LBridge Directory</title>
+  <rect width="20" height="20" rx="3.75" fill="#17212b"/>
+  <path d="M4.77 3.75h3.28v9.38h5.72v3.12H4.77V3.75Z" fill="#fff"/>
+  <path d="M10 3.75h2.34l2.9 4.06-2.9 4.07H10l2.9-4.07L10 3.75Z" fill="#8de4c7"/>
+</svg>

@@ -11,6 +11,7 @@ import {
 import { brandFulfillment, onSyncError, orderCancelled, refundCreated } from "./sync-back.server";
 import { matchBrandVariants } from "./brands.server";
 import { alert } from "../alerts.server";
+import { processProductFeed, processProductFeedStatus } from "../product-feeds.server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface Handler {
@@ -50,6 +51,18 @@ export const handlers: Record<string, Handler> = {
     run: matchBrandVariants,
     onError: async (job, err, dead) => {
       if (dead) await alert("error", `Product matching failed for brand ${(job.payload as any).brandId}: ${(err as Error).message}`);
+    },
+  },
+  product_feed_sync: {
+    run: processProductFeed,
+    onError: async (job, err, dead) => {
+      if (dead) await alert("error", `LBridge product feed sync failed for ${(job.payload as any).shop}: ${(err as Error).message}`);
+    },
+  },
+  product_feed_status: {
+    run: processProductFeedStatus,
+    onError: async (job, err, dead) => {
+      if (dead) await alert("error", `LBridge product feed status sync failed for ${(job.payload as any).shop}: ${(err as Error).message}`);
     },
   },
 };

@@ -1,8 +1,8 @@
 # L-Beauty Order Bridge
 
-A Shopify app that sends paid L-Beauty marketplace orders into each brand's own
-Shopify store, and brings shipping, tracking, cancellations and refunds back to
-L-Beauty. Built to run 200+ brands from one app.
+A Shopify Sales Channel and order-routing app. LBridge Directory syncs merchant-published products through contextual feeds and sends buyers to attributed Shopify Checkout. The app also sends paid L-Beauty marketplace orders into each brand's own Shopify store, and brings shipping, tracking, cancellations and refunds back to L-Beauty. Built to run 200+ brands from one app.
+
+For the Sales Channel deployment, account handshake, feed, checkout, billing audit, and reviewer checklist, see **[docs/sales-channel-runbook.md](docs/sales-channel-runbook.md)**.
 
 One app, two roles:
 

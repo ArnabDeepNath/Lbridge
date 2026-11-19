@@ -1,0 +1,5 @@
+[[extensions]]
+name = "LBridge Directory"
+uid = "e2ebf022-749d-4309-a076-a1643a306b6c"
+type = "channel_config"
+handle = "channel-config"

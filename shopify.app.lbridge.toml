@@ -1,0 +1,53 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "7f346082ede5135d717e2f03964890e5"
+application_url = "https://lbridge-nine.vercel.app"
+embedded = true
+name = "lbridge"
+api_version = "2026-10"
+
+[access_scopes]
+scopes = "read_orders,write_orders,read_products,read_product_listings,write_resource_feedbacks,read_resource_feedbacks,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,unauthenticated_read_product_listings,unauthenticated_write_checkouts,unauthenticated_read_checkouts"
+optional_scopes = []
+use_legacy_install_flow = false
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = ["app/uninstalled"]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = ["app/scopes_update"]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/compliance"
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+
+  [[webhooks.subscriptions]]
+  topics = ["product_feeds/full_sync"]
+  uri = "/api/webhooks/feeds-full-sync"
+
+  [[webhooks.subscriptions]]
+  topics = ["product_feeds/full_sync_finish"]
+  uri = "/api/webhooks/feeds-full-sync-finish"
+
+  [[webhooks.subscriptions]]
+  topics = ["product_feeds/incremental_sync"]
+  uri = "/api/webhooks/feeds-incremental-sync"
+
+  [[webhooks.subscriptions]]
+  topics = ["product_feeds/update"]
+  uri = "/api/webhooks/feeds-update"
+
+[auth]
+redirect_urls = [
+  "https://lbridge-nine.vercel.app/auth/callback",
+  "https://lbridge-nine.vercel.app/auth/shopify/callback",
+  "https://lbridge-nine.vercel.app/api/auth/callback"
+]
+
+[build]
+automatically_update_urls_on_dev = true

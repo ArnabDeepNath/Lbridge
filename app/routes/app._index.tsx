@@ -1,20 +1,73 @@
 // Home page. L-Beauty sees the operations overview; a brand sees its
 // connection status and the L-Beauty orders it has received.
 
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import type { ReactNode } from "react";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { redirect, useActionData, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
 import { isMarketplace } from "../lib/config.server";
 import { authenticateAdminOrLocal } from "../lib/guard.server";
 import { queueStats } from "../lib/jobs.server";
 import { StatusBadge, money, when } from "../lib/ui";
+import { connectDirectoryAccount, disconnectDirectoryAccount, type ChannelAdminClient } from "../lib/channel.server";
+import { FooterHelp, SalesChannelSections, type SalesChannelView } from "../lib/sales-channel";
+
+async function salesChannelView(shop: string, request: Request): Promise<SalesChannelView> {
+  const [connection, publishedCount, products] = await Promise.all([
+    db.channelConnection.findUnique({ where: { shopDomain: shop } }),
+    db.directoryProduct.count({ where: { shopDomain: shop, isPublished: true } }),
+    db.directoryProduct.findMany({ where: { shopDomain: shop, isPublished: true }, select: { validationMessages: true } }),
+  ]);
+  return {
+    connection: connection ? {
+      status: connection.status,
+      accountId: connection.accountId,
+      accountName: connection.accountName,
+      directoryUrl: connection.directoryUrl,
+      lastError: connection.lastError,
+      connectedAt: connection.connectedAt,
+    } : null,
+    publishedCount,
+    issueCount: products.filter((product) => Array.isArray(product.validationMessages) && product.validationMessages.length > 0).length,
+    defaultDirectoryUrl: `${new URL(request.url).origin}/directory/${shop}`,
+    supportEmail: process.env.LBRIDGE_SUPPORT_EMAIL || "support@lbridge.app",
+    supportUrl: process.env.LBRIDGE_SUPPORT_URL || "",
+  };
+}
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session, admin } = await authenticateAdminOrLocal(request);
+  const form = await request.formData();
+  const value = (key: string) => String(form.get(key) ?? "");
+  try {
+    if (value("intent") === "connect") {
+      await connectDirectoryAccount(admin as ChannelAdminClient, session.shop, {
+        accountId: value("accountId"),
+        accountName: value("accountName"),
+        directoryUrl: value("directoryUrl"),
+        apiKey: value("apiKey"),
+      });
+    } else if (value("intent") === "disconnect") {
+      await disconnectDirectoryAccount(session.shop);
+    } else {
+      throw new Error("Unknown LBridge account action.");
+    }
+    const url = new URL(request.url);
+    return redirect(`${url.pathname}${url.search}`);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "The LBridge account action failed." };
+  }
+};
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticateAdminOrLocal(request);
 
   if (!isMarketplace(session.shop)) {
-    const brand = await db.brand.findUnique({ where: { shopDomain: session.shop } });
+    const [brand, salesChannel] = await Promise.all([
+      db.brand.findUnique({ where: { shopDomain: session.shop } }),
+      salesChannelView(session.shop, request),
+    ]);
     const orders = brand
       ? await db.brandOrder.findMany({
           where: { brandId: brand.id },
@@ -23,11 +76,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           select: { id: true, lbOrderName: true, brandOrderName: true, status: true, subtotalMinor: true, currency: true, createdAt: true, isTest: true },
         })
       : [];
-    return { role: "brand" as const, brand, orders };
+    return { role: "brand" as const, brand, orders, salesChannel };
   }
 
   const since = new Date(Date.now() - 7 * 86_400_000);
-  const [byStatus, brandsByStatus, attention, queue] = await Promise.all([
+  const [byStatus, brandsByStatus, attention, queue, salesChannel] = await Promise.all([
     db.brandOrder.groupBy({ by: ["status"], where: { createdAt: { gte: since }, isTest: false }, _count: { _all: true } }),
     db.brand.groupBy({ by: ["status"], _count: { _all: true } }),
     db.brandOrder.findMany({
@@ -37,6 +90,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       include: { brand: { select: { name: true } } },
     }),
     queueStats(),
+    salesChannelView(session.shop, request),
   ]);
   return {
     role: "marketplace" as const,
@@ -44,20 +98,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     brandCounts: Object.fromEntries(brandsByStatus.map((r) => [r.status, r._count._all])) as Record<string, number>,
     attention,
     queue,
+    salesChannel,
   };
 };
 
 export default function Index() {
   const data = useLoaderData<typeof loader>();
-  return data.role === "brand" ? <BrandHome data={data} /> : <MarketplaceHome data={data} />;
+  const actionData = useActionData<typeof action>();
+  const channel = <SalesChannelSections data={data.salesChannel} actionError={actionData?.error} />;
+  const footer = <FooterHelp supportEmail={data.salesChannel.supportEmail} supportUrl={data.salesChannel.supportUrl} />;
+  return data.role === "brand" ? <BrandHome data={data} channel={channel} footer={footer} /> : <MarketplaceHome data={data} channel={channel} footer={footer} />;
 }
 
-function MarketplaceHome({ data }: { data: Extract<ReturnType<typeof useLoaderData<typeof loader>>, { role: "marketplace" }> }) {
+function MarketplaceHome({ data, channel, footer }: { data: Extract<ReturnType<typeof useLoaderData<typeof loader>>, { role: "marketplace" }>; channel: ReactNode; footer: ReactNode }) {
   const c = data.orderCounts;
   const b = data.brandCounts;
   const total = Object.values(c).reduce((s, n) => s + n, 0);
   return (
-    <s-page heading="L-Beauty Order Bridge">
+    <s-page heading="LBridge Directory & Order Bridge">
+      {channel}
       {(b.PENDING_APPROVAL ?? 0) > 0 && (
         <s-banner tone="warning" heading={`${b.PENDING_APPROVAL} brand(s) waiting for approval`}>
           <s-paragraph>
@@ -117,6 +176,7 @@ function MarketplaceHome({ data }: { data: Extract<ReturnType<typeof useLoaderDa
           <s-paragraph>The queue is growing — add another worker process.</s-paragraph>
         )}
       </s-section>
+      {footer}
     </s-page>
   );
 }
@@ -130,7 +190,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function BrandHome({ data }: { data: Extract<ReturnType<typeof useLoaderData<typeof loader>>, { role: "brand" }> }) {
+function BrandHome({ data, channel, footer }: { data: Extract<ReturnType<typeof useLoaderData<typeof loader>>, { role: "brand" }>; channel: ReactNode; footer: ReactNode }) {
   const { brand, orders } = data;
   const steps = [
     { done: !!brand, label: "App installed" },
@@ -139,8 +199,9 @@ function BrandHome({ data }: { data: Extract<ReturnType<typeof useLoaderData<typ
     { done: brand?.status === "ACTIVE", label: "Live — L-Beauty orders arrive in your Orders list" },
   ];
   return (
-    <s-page heading="L-Beauty marketplace">
-      <s-section heading="Connection">
+    <s-page heading="LBridge Directory">
+      {channel}
+      <s-section heading="L-Beauty order connection">
         {brand ? <StatusBadge status={brand.status} /> : <s-badge tone="warning">Setting up</s-badge>}
         <s-stack gap="small-200">
           {steps.map((s) => (
@@ -180,6 +241,7 @@ function BrandHome({ data }: { data: Extract<ReturnType<typeof useLoaderData<typ
           </s-table>
         )}
       </s-section>
+      {footer}
     </s-page>
   );
 }

@@ -37,7 +37,7 @@ export async function authenticateAdminOrLocal(request: Request) {
   };
 }
 
-async function registerMandatoryWebhooks(session: { shop: string }) {
+async function registerMandatoryWebhooks(session: Parameters<typeof registerWebhooks>[0]["session"]) {
   try {
     await registerWebhooks({ session });
   } catch {

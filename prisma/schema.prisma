@@ -274,3 +274,95 @@ model Job {
 
   @@index([status, runAt])
 }
+
+// ---------------------------------------------------------------------------
+// LBridge Sales Channel, contextual product feeds, and public directory
+// ---------------------------------------------------------------------------
+
+enum ChannelConnectionStatus {
+  CONNECTING
+  CONNECTED
+  ERROR
+  DISCONNECTED
+}
+
+model ChannelConnection {
+  id                    String                  @id @default(cuid())
+  shopDomain            String                  @unique
+  accountId             String
+  accountName           String
+  directoryUrl          String
+  status                ChannelConnectionStatus @default(CONNECTING)
+  channelId             String?                 @unique
+  channelHandle         String?
+  storefrontTokenId     String?
+  storefrontAccessToken String?
+  lastError             String?
+  connectedAt           DateTime?
+  disconnectedAt        DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  @@index([status])
+}
+
+model ProductFeed {
+  feedId            String    @id
+  shopDomain        String
+  country           String?
+  language          String?
+  status            String    @default("active")
+  lastFullSyncAt    DateTime?
+  lastFullSyncCount Int?
+  lastError         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([shopDomain])
+}
+
+model DirectoryProduct {
+  id                 String            @id @default(cuid())
+  shopDomain         String
+  feedId             String
+  productId          String
+  country            String?
+  language           String?
+  title              String
+  handle             String?
+  description        String?
+  onlineStoreUrl     String?
+  imageUrl           String?
+  imageWidth         Int?
+  imageHeight        Int?
+  isPublished        Boolean           @default(true)
+  validationMessages Json              @default("[]")
+  payload            Json
+  productUpdatedAt   DateTime
+  lastSyncedAt       DateTime          @default(now())
+
+  variants DirectoryVariant[]
+
+  @@unique([shopDomain, feedId, productId])
+  @@index([shopDomain, isPublished])
+  @@index([productId])
+}
+
+model DirectoryVariant {
+  id                    String  @id @default(cuid())
+  directoryProductId    String
+  variantId             String
+  title                 String
+  sku                   String?
+  priceAmount           String
+  priceCurrency         String
+  compareAtPriceAmount  String?
+  quantityAvailable     Int     @default(0)
+  availableForSale      Boolean @default(false)
+  payload               Json
+
+  product DirectoryProduct @relation(fields: [directoryProductId], references: [id], onDelete: Cascade)
+
+  @@unique([directoryProductId, variantId])
+  @@index([variantId])
+}

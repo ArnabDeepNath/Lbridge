@@ -19,7 +19,7 @@
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
     "worker": "tsx worker/index.ts",
-    "test": "node --test tests/core.test.ts",
+    "test": "node --test tests/core.test.ts tests/sales-channel.test.ts",
     "db:up": "docker compose up -d db",
     "db:migrate": "prisma migrate dev"
   },

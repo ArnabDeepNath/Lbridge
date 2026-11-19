@@ -1,0 +1,22 @@
+handle = "lbridge-marketplace"
+label = "LBridge Directory"
+icon = "lbridge-icon.svg"
+productFeedManagement = "automatic"
+
+[capabilities]
+bundles = false
+digitalProducts = true
+
+[requirements]
+expectsOnlineStoreParity = false
+merchantOfRecord = "merchant"
+
+[[countries]]
+code = "US"
+languages = ["en"]
+currency = "USD"
+
+[[countries]]
+code = "IN"
+languages = ["en"]
+currency = "INR"

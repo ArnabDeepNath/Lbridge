@@ -11,5 +11,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await db.session.deleteMany({ where: { shop } });
   }
   await onUninstall(shop);
+  await db.directoryProduct.deleteMany({ where: { shopDomain: shop } });
+  await db.productFeed.deleteMany({ where: { shopDomain: shop } });
+  await db.channelConnection.updateMany({
+    where: { shopDomain: shop },
+    data: {
+      status: "DISCONNECTED",
+      channelId: null,
+      channelHandle: null,
+      storefrontAccessToken: null,
+      storefrontTokenId: null,
+      disconnectedAt: new Date(),
+    },
+  });
   return new Response();
 };
